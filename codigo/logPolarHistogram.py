@@ -55,22 +55,5 @@ def logPolarHistogram(image):
 
     # Transforma a matriz 5x12 em um vetor 1D de tamanho 60
     feature_vector = histograma_visual.flatten()
-    
-    ##plt.figure(figsize=(12, 5))
-    ##
-    ##plt.subplot(131)
-    ##plt.imshow(image, cmap='gray', vmin=0, vmax=255)
-    ##plt.title('Original (Entrada)\nBranco=255, Preto=0')
-    ##
-    ##plt.subplot(132)
-    ##plt.imshow(log_polar_img, cmap='gray')
-    ##plt.title('Log-Polar (Sinal)\nPreto=1 (Energia), Fundo=0')
-    ##
-    ##plt.subplot(133)
-    ##plt.imshow(histograma_visual, cmap='gray')
-    ##plt.title(f'Histograma Visual\n(Soma por Bin - {n_radial_bins}x{n_angular_bins})')
-    ##
-    ##plt.tight_layout()
-    ##plt.show()
 
     return feature_vector
