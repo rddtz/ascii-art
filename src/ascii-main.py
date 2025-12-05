@@ -8,21 +8,14 @@ from skimage.measure import approximate_polygon
 import matplotlib.pyplot as plt
 
 """
-usage: ascii-main.py [-h] -p PATH -r RATIO [-b BLUR]
+This program works true command line options, run:
 
-Structure-Based ASCII Art.
+python ascii-main.py -h
 
-options:
-  -h, --help            show this help message and exit
-  -p PATH, --path PATH  path to the image
-  -r RATIO, --ratio RATIO
-                        Threshold for binary image
-  -b BLUR, --blur BLUR  apply a gaussian blur before skeletonize
+to see the options.
+A normal execution is like:
 
-Example:
-
-    python ascii-main.py -p ../image-tests/image2.jpg -r 0.1
-
+python ascii-main.py --path ../path/to/image --ratio 0.3
 """
 
 def LoadImage(nome_arquivo):
@@ -72,11 +65,9 @@ def VectorizeDFS(img_skt, args):
 
     lines = []
 
-    tol = 2.0
-    try:
-        tol = args.tolerance
-    except:
-        pass
+    tol = args.tolerance
+    if tol == None:
+        tol = 2.0
 
     # 0 = empty, 1 = unvisited (line that are not finishe), 2 = visited
     visited = np.zeros(img_skt.shape, dtype=int)
@@ -110,11 +101,9 @@ def VectorizeCountours(img_skt, args):
 
     lines = []
 
-    tol = 2.0
-    try:
-        tol = args.tolerance
-    except:
-        pass
+    tol = args.tolerance
+    if tol == None:
+        tol = 2.0
 
     contours, _ = cv2.findContours((img_skt * 255).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -122,10 +111,9 @@ def VectorizeCountours(img_skt, args):
         # cnt is shape (N, 1, 2) -> we want (N, 2)
         line = cnt.reshape(-1, 2)
 
-        line = line[:, [1, 0]]
-        # 4. Clean up "Backtracking"
-        # Since findContours treats everything as a closed loop,
-        # it might trace a single line like: A -> B -> C -> B -> A.
+        line = line[:, [1, 0]] # correct axis
+
+        # findContours treats everything as a closed loop,
         # We take only the first half if start and end are close.
         if len(line) > 2:
             dist = np.linalg.norm(line[0] - line[-1])
