@@ -47,7 +47,8 @@ two lines for each edge instead of one because it finds Contours.
 
 Now we are trying to use a method based on dfs to create the vectors.
 """
-def VectorizeDFS(current_pixel, current_line, visited, img_shape):
+def RecursiveVectorizeDFS(current_pixel, current_line, visited, img_shape):
+
     visited[current_pixel] = 2
     current_line.append(current_pixel)
 
@@ -64,16 +65,12 @@ def VectorizeDFS(current_pixel, current_line, visited, img_shape):
     if not neighbors:
         return
 
-    VectorizeDFS(neighbors[0], current_line, visited, img_shape)
+    RecursiveVectorizeDFS(neighbors[0], current_line, visited, img_shape)
 
 
-def VectorizeImage(img, args):
+def VectorizeDFS(img_skt, args):
 
-    if args.countor:
-        print("Vectorizing using cv2")
-
-    # Binary image after skeletonizing
-    img_skt = SkeletonizeImage(img, args) > 0
+    lines = []
 
     tol = 2.0
     try:
@@ -85,11 +82,9 @@ def VectorizeImage(img, args):
     visited = np.zeros(img_skt.shape, dtype=int)
     visited[img_skt] = 1
 
-    print(img_skt)
     # Get the coordinates of every unvisited pixel
     pixel_indices = np.argwhere(visited == 1)
 
-    lines = []
     for start_pixel in pixel_indices:
 
         start_pixel = tuple(start_pixel)
@@ -99,15 +94,69 @@ def VectorizeImage(img, args):
             continue
 
         line = []
-        VectorizeDFS(start_pixel, line, visited, img_skt.shape)
+        RecursiveVectorizeDFS(start_pixel, line, visited, img_skt.shape)
 
         # Simplify Polyline
         # Reduces the number of vertices to make optimization faster.
-        if len(line) > 1:
-            simp = approximate_polygon(np.array(line), tolerance=tol)
-            lines.append(simp)
+        if not args.raw:
+            line = approximate_polygon(np.array(line), tolerance=tol)
+        else:
+            line = approximate_polygon(np.array(line), tolerance=0)
+        lines.append(line)
 
-    print(lines)
+    return lines
+
+def VectorizeCountours(img_skt, args):
+
+    lines = []
+
+    tol = 2.0
+    try:
+        tol = args.tolerance
+    except:
+        pass
+
+    contours, _ = cv2.findContours((img_skt * 255).astype(np.uint8), cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+
+    for cnt in contours:
+        # cnt is shape (N, 1, 2) -> we want (N, 2)
+        line = cnt.reshape(-1, 2)
+
+        line = line[:, [1, 0]]
+        # 4. Clean up "Backtracking"
+        # Since findContours treats everything as a closed loop,
+        # it might trace a single line like: A -> B -> C -> B -> A.
+        # We take only the first half if start and end are close.
+        if len(line) > 2:
+            dist = np.linalg.norm(line[0] - line[-1])
+            # If the start and end are the same point (it walked back on itself)
+            if dist < 5:
+                # Take half the path
+                line = line[:len(line)//2 + 1]
+
+        if not args.raw:
+            line = approximate_polygon(np.array(line), tolerance=tol)
+        lines.append(line.astype(float))
+
+    return lines
+
+def VectorizeImage(img, args):
+
+    if args.countor:
+        print("Vectorizing using cv2")
+
+    # Binary image after skeletonizing
+    img_skt = SkeletonizeImage(img, args) > 0
+
+
+    lines = []
+
+    if args.countor:
+        lines = VectorizeCountours(img_skt, args)
+    else:
+        lines = VectorizeDFS(img_skt, args)
+
+#    print(lines)
     return lines, img_skt
 
 if __name__ == "__main__":
@@ -115,12 +164,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Structure-Based ASCII Art.')
     parser.add_argument('-p', '--path', type=str, required=True, help='path to the image')
     parser.add_argument('-r', '--ratio', type=float, required=True, help='Threshold for binary image')
-    parser.add_argument('-b', '--blur', type=bool, required=False, help='apply a gaussian blur before skeletonize')
-    parser.add_argument('-c', '--countor', type=bool, required=False, help='Vectorize image using cv2.findContours()')
-    parser.add_argument('-t', '--tolerance', type=float, required=False, help='Tolerance when simplifing the lines')
+    parser.add_argument('-b', '--blur', required=False, action='store_true', help='apply a gaussian blur before skeletonize')
+    parser.add_argument('-c', '--countor', required=False, action='store_true', help='Vectorize image using cv2.findContours()')
+    parser.add_argument('-t', '--tolerance', type=float, required=False,  help='Tolerance when simplifing the lines')
+    parser.add_argument('-n', '--raw', required=False, action='store_true',  help="Don't simplify the vectorized image")
     args = parser.parse_args()
 
-
+    print(args)
     img = LoadImage(args.path)
 
     vectors, skeleton_img = VectorizeImage(img, args)
@@ -147,170 +197,3 @@ if __name__ == "__main__":
 
     plt.tight_layout()
     plt.show()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-"""
-
-Next Steps:
-
-- Transform the result of skeletonize to a vector representation (maybe use cv2.findContours)
-
-- Compute AISS for every letter in the font (monospaced font - preferable to use the terminal font)
-
-For the image, create a LogPolar Histogram sampling N points in each grid.
-For each sample compute the LogPolar Histogram, concataned then and return
-
-HINT:
-Comparison Function: The similarity score (DAISS​) between an image segment and a character is the normalized difference between their feature vectors.
-
-Implement the deformation model:
-
-Local Deformation Constraint: Calculate a score based on how much a line segment has changed in length and angle compared to the original input.
-
-    Use Equation 2 from the paper: Dlocal​=max(Vθ​,Vr​).
-
-Accessibility Constraint: To prevent lines from drifting apart and destroying the image context (e.g., a window drifting out of a house), implement a "global" constraint.
-
-Create a loop to minimize the error
-
-Based on the methodology described in the paper "Structure-based ASCII Art", here is a step-by-step guide to reproducing this system in Python.
-
-The core concept is to treat ASCII art generation not as a pixel dithering problem (tone-based), but as a shape matching optimization problem. You are trying to fit character shapes to the "vectorized" lines of an image while allowing the image lines to wiggle slightly (deform) to fit the characters better.
-
-Prerequisites: Python Libraries
-
-You will likely need:
-
-    Numpy: For matrix operations and vector math.
-
-    Scikit-image (skimage): For skeletonization and image processing.
-
-    OpenCV (cv2): For edge detection (if starting with raster images).
-
-    PIL (Pillow): For font rendering and image I/O.
-
-    Matplotlib: For visualization.
-
-Step 1: Pre-processing the Character Set
-
-The system needs a "dictionary" of shapes to match against the image. The paper emphasizes using fixed-width fonts and ignoring thickness.
-
-    Select a Font: Choose a fixed-width font (e.g., Courier, Consolas). The paper used a set of 95 printable ASCII characters.
-
-Render and Skeletonize:
-
-    Render each character into a small bitmap grid (e.g., Tw​×Th​).
-
-    Apply a skeletonization algorithm (like skimage.morphology.skeletonize) to reduce the character to single-pixel width lines. This is because the paper relies on "centerline extraction" to match pure shape structure.
-
-    Compute AISS Features: Calculate the Alignment-Insensitive Shape Similarity (AISS) features for every character in your set and store them. (See Step 3 for details).
-
-Step 2: Input Image Vectorization
-
-The algorithm requires vector polylines as input, not a grid of pixels.
-
-    Edge Detection: If you have a JPG/PNG, use Canny edge detection or similar to find strong lines.
-
-    Vectorization: Convert these pixel edges into mathematical line segments (polylines). You can use libraries that convert raster to SVG, or simple contour finding in OpenCV (cv2.findContours).
-
-        Note: The paper optimizes by moving the vertices of these lines, so you need the data stored as coordinate lists, not pixels.
-
-Step 3: Implement the AISS Metric (The "Brain")
-
-Standard pixel comparison (like MSE) fails because characters might be slightly shifted or rotated compared to the image lines. You must implement the Alignment-Insensitive Shape Similarity (AISS) metric.
-
-    Log-Polar Histogram: Implement a descriptor that captures the distribution of pixels relative to a center point using log-polar bins (circular zones that get larger further from the center).
-
-        Grid Sampling: Do not just compare the center of the cell. Sample N points in a grid layout across the character cell.
-
-Feature Extraction: For each sample point, compute the log-polar histogram. Concatenate these histograms to form a massive feature vector for that character.
-
-Comparison Function: The similarity score (DAISS​) between an image segment and a character is the normalized difference between their feature vectors.
-
-Step 4: Implement the Deformation Model
-
-To make the ASCII art look good, the system is allowed to warp the original image slightly so lines line up with characters (e.g., moving a line slightly up to hit a generic dash -).
-
-    Local Deformation Constraint: Calculate a score based on how much a line segment has changed in length and angle compared to the original input.
-
-    Use Equation 2 from the paper: Dlocal​=max(Vθ​,Vr​).
-
-Accessibility Constraint: To prevent lines from drifting apart and destroying the image context (e.g., a window drifting out of a house), implement a "global" constraint.
-
-    Shoot "rays" from the midpoint of a line segment to find neighboring lines.
-
-    Ensure the relative distance to these neighbors remains consistent.
-
-Step 5: The Optimization Loop (The "Engine")
-
-This is where the generation happens. The problem is formulated as minimizing an Energy function (E).
-
-The Loop (Simulated Annealing):
-
-    Initialize: Overlay a grid on your vectorized input image based on your target text resolution (Rw​×Rh​).
-
-Perturb: Randomly select a vertex of an input polyline and move it slightly (deformation).
-
-Rasterize: Render the newly deformed vector lines onto the grid.
-
-Match: For every grid cell, compare the rasterized image content against your pre-computed character set using AISS. Find the best matching character for that specific cell.
-
-Calculate Energy (E): Compute the total cost using Equation 6:
-
-E=K1​∑(DAISS​⋅Ddeform​)
-
-    This combines how bad the match is (DAISS​) multiplied by how much you distorted the image (Ddeform​).
-
-Decide:
-
-    If E is lower (better), accept the change.
-
-If E is higher (worse), accept it with a probability based on current "Temperature" (standard Simulated Annealing logic) to avoid getting stuck in local minima.
-
-Repeat: Loop until the energy stabilizes or for a fixed number of iterations (C0​=5000 in the paper).
-
-Summary of Architecture
-
-    Input: Vector Polylines.
-
-    Database: AISS feature vectors for 95 ASCII chars.
-
-    Process:
-
-        While Temperature > 0:
-
-            Wiggle lines.
-
-            Rasterize wiggled lines to grid.
-
-            Find best char for each grid cell.
-
-            Calculate Score (Match Quality + Wiggle Penalty).
-
-            Accept/Reject wiggle.
-
-    Output: The grid of best-matching characters.
-
-"""
