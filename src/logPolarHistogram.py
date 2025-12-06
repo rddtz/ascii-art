@@ -1,59 +1,78 @@
 import cv2
 import numpy as np
-import matplotlib.pyplot as plt
 
-def logPolarHistogram(image):
-    """
-    Transforma a imagem em log-polar e calcula o log-polar histogram
-    No final, retorna um vetor que será o log-polar.
-    """
-    
-    h, w = image.shape
-    centro = (w // 2, h // 2)
-    raio_max = min(w, h) / 2
 
-    ## normaliza a imagem para 0 e 1
-    ## inverte os pixels
-    img_float = image.astype(np.float32) / 255.0
-    img_sinal = 1.0 - img_float
+def LogPolarDescriptor(img_window, center, n_radial=5, n_angular=12):
 
-    # TRANSFORMAÇÃO PARA LOG-POLAR
-    # borderValue=0.0 garante que o que está fora do círculo conte como "fundo"
-    log_polar_img = cv2.warpPolar(
-        src=img_sinal,
-        dsize=(w, h),          
-        center=centro,
-        maxRadius=raio_max,
+    # 1) Normalizar janela local
+    patch = img_window.astype(np.float32)
+    patch = 1.0 - (patch / 255.0)  # 1 = preto
+
+    # centro correto!
+    center_local = (int(center[0]), int(center[1]))
+
+    # o raio máximo é o limite do local
+    max_radius = min(center_local[0], center_local[1],
+                     patch.shape[1]-center_local[0],
+                     patch.shape[0]-center_local[1])
+
+    # 2) Transformação log-polar centrada no ponto p
+    log_polar = cv2.warpPolar(
+        patch,
+        dsize=(patch.shape[1], patch.shape[0]),
+        center=center_local,
+        maxRadius=max_radius,
         flags=cv2.WARP_POLAR_LOG
     )
 
-    n_radial_bins = 5   # Linhas (Distância)
-    n_angular_bins = 12 # Colunas (Ângulo)
-    
-    # Matriz para armazenar o resultado visualmente (5x12)
-    histograma_visual = np.zeros((n_radial_bins, n_angular_bins), dtype=np.float32)
-    
-    # Tamanho de cada célula na imagem transformada
-    step_h = log_polar_img.shape[0] // n_radial_bins
-    step_w = log_polar_img.shape[1] // n_angular_bins
-    
-    for i in range(n_radial_bins):
-        for j in range(n_angular_bins):
-            # Define as coordenadas do recorte (ROI)
-            y_start = i * step_h
-            y_end   = (i + 1) * step_h
-            x_start = j * step_w
-            x_end   = (j + 1) * step_w
-            
-            # Recorta o bin específico
-            recorte = log_polar_img[y_start:y_end, x_start:x_end]
-            
-            # h(k) = sum(I(q))
-            soma_bloco = np.sum(recorte)
-            
-            histograma_visual[i, j] = soma_bloco
+    # 3) Histogramas
+    hist = np.zeros((n_radial, n_angular), dtype=np.float32)
 
-    # Transforma a matriz 5x12 em um vetor 1D de tamanho 60
-    feature_vector = histograma_visual.flatten()
+    step_r = log_polar.shape[0] // n_radial
+    step_t = log_polar.shape[1] // n_angular
 
-    return feature_vector
+    for i in range(n_radial):
+        for j in range(n_angular):
+            block = log_polar[i*step_r:(i+1)*step_r,
+                              j*step_t:(j+1)*step_t]
+            hist[i, j] = np.sum(block)
+
+    return hist.flatten()
+
+
+def ComputeShapeDescriptors(letter_skeleton, R=12):
+    points = ExtractSkeletonPoints(letter_skeleton)
+    descriptors = []
+
+    for p in points:
+        window, center = ExtractWindow(letter_skeleton, p, R)
+        hist = LogPolarDescriptor(window, center)
+        descriptors.append(hist)
+
+    return points, descriptors
+
+
+def ExtractWindow(img, p, R):
+    x, y = p
+    h, w = img.shape
+
+    x1 = max(0, x - R)
+    x2 = min(w, x + R)
+    y1 = max(0, y - R)
+    y2 = min(h, y + R)
+
+    window = img[y1:y2, x1:x2]
+
+    cx = x - x1
+    cy = y - y1
+
+    return window, (cx, cy)
+
+
+
+
+def ExtractSkeletonPoints(skeleton_img):
+    
+    ys, xs = np.where(skeleton_img > 0) 
+    points = list(zip(xs, ys))
+    return points
