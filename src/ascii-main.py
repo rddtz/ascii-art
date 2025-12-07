@@ -1,147 +1,129 @@
-from pathlib import Path
-import sys
-
-PARENT = Path(__file__).resolve().parent.parent
-sys.path.append(str(PARENT))
-
-import time
-from tqdm import tqdm
-from generateAscii import PrepareAsciiCharImages, ComputeShapeDescriptors
-from config import BASE_DIR
 import argparse
 import cv2
 import numpy as np
-import asciiVectorize as av
-import rasterizeLines as rl
-from resizePolylines import resize_polylines
-import math
+import asciiVectorize as asciiV
+import asciiAISS as asciiA
+from asciiOptimization import Optimize
+import time
+from tqdm import tqdm
 
+"""
+This program works true command line options, run:
 
-def compute_descriptor(img):
-    _, desc = ComputeShapeDescriptors(img)
-    return desc
+python ascii-main.py -h
 
+to see the options.
+A normal execution is like:
 
-def classify_cell(cell_img, letter_descriptors, compute_descriptor):
-    cell_img = 255 - cell_img
-    desc = np.array(compute_descriptor(cell_img), dtype=float)
-
-    best_char = None
-    best_dist = float("inf")
-
-    for char, letter_desc in letter_descriptors.items():
-        d = np.linalg.norm(desc - np.array(letter_desc, dtype=float))
-        if d < best_dist:
-            best_dist = d
-            best_char = char
-
-    return best_char
-
-
-def split_into_cells(image, Tw, Th, Rw, Rh):
-    cells = []
-    for r in range(Rh):
-        for c in range(Rw):
-            y1 = r * Th
-            y2 = y1 + Th
-            x1 = c * Tw
-            x2 = x1 + Tw
-            cell = image[y1:y2, x1:x2]
-            cells.append(((r, c), cell))
-    return cells
-
-
-def computeRh(W, H, args):
-    alpha = args.th / args.tw
-    Rh = math.floor(H / (alpha * (W / args.numberColumns)))
-    return max(Rh, 1)
-
+python ascii-main.py --path ../path/to/image --ratio 0.3
+"""
 
 def ParseArgs():
+
     parser = argparse.ArgumentParser(description='Structure-Based ASCII Art.')
-    parser.add_argument('-p',  '--path', type=str, required=True)
-    parser.add_argument('-r',  '--ratio', type=float, required=True)
-    parser.add_argument('-b',  '--blur', action='store_true')
-    parser.add_argument('-c',  '--countor', action='store_true')
-    parser.add_argument('-t',  '--tolerance', type=float)
-    parser.add_argument('-n',  '--raw', action='store_true')
-    parser.add_argument('-nc', '--numberColumns', type=int, required=True)
+    parser.add_argument('-p', '--path', type=str, required=True, help='path to the image')
+    parser.add_argument('-r', '--ratio', type=float, required=True, default=0.3, help='Threshold for binary image')
+    parser.add_argument('-b', '--blur', required=False, action='store_true', help='apply a gaussian blur before skeletonize')
+    parser.add_argument('-o', '--countor', required=False, action='store_true', help='Vectorize image using cv2.findContours()')
+    parser.add_argument('-t', '--tolerance', type=float, required=False, default=2.0,  help='Tolerance when simplifing the lines')
+    parser.add_argument('-n', '--raw', required=False, action='store_true',  help="Don't simplify the vectorized image")
+    parser.add_argument('-v', '--visible', required=False, action='store_true',  help="Show everything related to debug")
+    parser.add_argument('-c', '--cols', type=int, required=True)
     parser.add_argument('-tw', type=int, default=13)
     parser.add_argument('-th', type=int, default=28)
-    parser.add_argument('-fs', type=int, default=24)
-    parser.add_argument('-df', type=str, default=f"{BASE_DIR}/font/FiraCode-Regular.ttf")
+    parser.add_argument('-s', '--reject', type=int, required=False, default=5000,  help='Consecutive rejects to stop otimization')
+    parser.add_argument('-d', '--decay', type=float, required=False, default=0.99,  help='Temp decay for Simulated Annealing (must be lower then 1)')
+    parser.add_argument('-l', '--limit', type=int, required=False, default=-1,  help='Max otimization steps (negative means unlimited)')
+
     return parser.parse_args()
 
-
 def LoadImage(nome_arquivo):
-    return cv2.imread(nome_arquivo, cv2.IMREAD_GRAYSCALE)
+     return cv2.imread(nome_arquivo, cv2.IMREAD_GRAYSCALE)
+
 
 
 if __name__ == "__main__":
 
+    start_time = time.time()
+
     args = ParseArgs()
-    print(args)
+    if args.visible:
+        print(args)
 
-    # --- 1. Gera descritores das letras ---
-    print("\n[1/7] Gerando descritores das letras...")
+    print("\n[1/???] Carregando a imagem...")
     t0 = time.time()
-    letters = PrepareAsciiCharImages(args)
-    print(f"   OK ({time.time() - t0:.2f}s)")
-
-    letter_descriptors = {char: desc for (char, img, pts, desc) in letters}
-
-    # --- 2. Carrega imagem ---
-    print("\n[2/7] Carregando imagem...")
     img = LoadImage(args.path)
-    print("   OK")
+    print(f"   OK ({time.time() - t0:.2f}s)")
+    H, W = img.shape
+    aspect = H / W
 
-    # --- 3. Vetorização + skeleton ---
-    print("\n[3/7] Vetorizando imagem + skeleton...")
+    # Calculate Rh (target text resolution height)
+    Rh = int(args.cols * aspect * (args.tw / args.th)) # [cite: 142]
+
+    target_W = args.cols * args.tw
+    target_H = Rh * args.th
+
+    print("\n[1/???] Vetorizando a imagem...")
     t0 = time.time()
-    vectors, skeleton_img = av.VectorizeImage(img, args)
+    polylines, skeleton_img = asciiV.VectorizeImage(img, target_W, target_H, args)
     print(f"   OK ({time.time() - t0:.2f}s)")
 
-    H, W = skeleton_img.shape
-    print(f"   Tamanho da imagem skeleton: {W} x {H}")
+    if args.visible:
+        print(polylines)
+        asciiV.PlotLines(polylines, skeleton_img)
 
-    # --- 4. Calcular Rh ---
-    print("\n[4/7] Calculando Rh...")
-    Rh = computeRh(W, H, args)
-    print(f"   Rh = {Rh}")
-
-    # --- 5. Resize polylines ---
-    print("\n[5/7] Ajustando polylines para nova grade...")
+    print("\n[1/???] Gerando descritores das letras...")
     t0 = time.time()
-    vector_resized = resize_polylines(
-        vectors, W, H,
-        args.tw, args.th,
-        args.numberColumns, Rh
-    )
+    letters = asciiA.PrepareAsciiCharImages(args)
     print(f"   OK ({time.time() - t0:.2f}s)")
 
-    # --- 6. Rasterização ---
-    print("\n[6/7] Rasterizando linhas...")
+
+    print("\n[1/???] Otimizando...")
     t0 = time.time()
-    new_shape = (args.th * Rh, args.tw * args.numberColumns)
-    vector_display = rl.RasterizeLines(vector_resized, new_shape, thickness=2)
+
+    polylines_orig = [np.copy(p) for p in polylines]
+    Optimize(Rh, polylines, polylines_orig, target_W, target_H, letters, args)
+
     print(f"   OK ({time.time() - t0:.2f}s)")
-    print(f"   Nova imagem rasterizada: {new_shape}")
 
-    # --- 7. Dividir em células ---
-    print("\n[7/7] Dividindo em células...")
-    cells = split_into_cells(vector_display, args.tw, args.th, args.numberColumns, Rh)
-    print(f"   Total de células: {len(cells)}")
+    print("\n[1/???] Generating ASCII Art...")
+    t0 = time.time()
 
-    # === CLASSIFICAÇÃO (PARTE MAIS PESADA) ===
-    print("\n[CLASSIFICAÇÃO] Comparando cada célula com todos os caracteres...")
-    output_chars = [[" "] * args.numberColumns for _ in range(Rh)]
+    final_raster = asciiV.RasterizeLines(polylines, (target_H, target_W), 1)
+    ascii_grid = []
 
-    for (r, c), cell in tqdm(cells, desc="Classificando"):
-        ch = classify_cell(cell, letter_descriptors, compute_descriptor)
-        output_chars[r][c] = ch
+    progress = tqdm(total=Rh * args.cols)
 
-    # --- Exibir saída ---
-    print("\n===== ASCII ART OUTPUT =====\n")
     for r in range(Rh):
-        print("".join(output_chars[r]))
-    print("\n===== END =====\n")
+        row_str = ""
+        for c in range(args.cols):
+            cell = final_raster[r*args.th : (r+1)*args.th,
+                                c*args.tw : (c+1)*args.tw]
+            if np.sum(cell) == 0:
+                row_str += " "
+                progress.update(1)
+                continue
+
+            desc = asciiA.AISS(cell, args)
+
+            best_char = " "
+            min_dist = float('inf')
+            for char, char_desc in letters.items():
+                d = np.linalg.norm(desc - char_desc)
+                if d < min_dist:
+                    min_dist = d
+                    best_char = char
+            row_str += best_char
+            progress.update(1)
+        ascii_grid.append(row_str)
+
+    progress.close()
+
+#    with open(OUTPUT_FILE, "w") as f:
+    for line in ascii_grid:
+        print(line)
+            #f.write(line + "\n")
+        # print(f"Resultado salvo em {OUTPUT_FILE}")
+
+    print(f"   OK ({time.time() - t0:.2f}s)")
+    print(f"   FINISHED:  {time.time() - start_time:.2f}s")
