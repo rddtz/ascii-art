@@ -122,13 +122,14 @@ def VectorizeImage(img, args):
 		print("Vectorizing using cv2")
 
 	# Binary image after skeletonizing
-	img_skt = SkeletonizeImage(img, args) > 0
+	img_skt = SkeletonizeImage(img, args)
+	img_skt2 = img_skt > 0
 
 	lines = []
 
 	if args.countor:
-		lines = VectorizeCountours(img_skt, args)
+		lines = VectorizeCountours(img_skt2, args)
 	else:
-		lines = VectorizeDFS(img_skt, args)
+		lines = VectorizeDFS(img_skt2, args)
 
 	return lines, img_skt

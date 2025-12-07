@@ -2,30 +2,34 @@ import cv2
 import numpy as np
 
 
+# -------------------------------------------------------
+# LOG-POLAR DESCRIPTOR
+# -------------------------------------------------------
 def LogPolarDescriptor(img_window, center, n_radial=5, n_angular=12):
 
-    # 1) Normalizar janela local
     patch = img_window.astype(np.float32)
-    patch = 1.0 - (patch / 255.0)  # 1 = preto
+    patch = 1.0 - (patch / 255.0)  # 1 = preto, 0 = branco
 
-    # centro correto!
-    center_local = (int(center[0]), int(center[1]))
+    cx, cy = int(center[0]), int(center[1])
 
-    # o raio máximo é o limite do local
-    max_radius = min(center_local[0], center_local[1],
-                     patch.shape[1]-center_local[0],
-                     patch.shape[0]-center_local[1])
+    max_radius = min(
+        cx,
+        cy,
+        patch.shape[1] - cx - 1,
+        patch.shape[0] - cy - 1
+    )
 
-    # 2) Transformação log-polar centrada no ponto p
+    if max_radius <= 1:
+        return np.zeros(n_radial * n_angular, dtype=np.float32)
+
     log_polar = cv2.warpPolar(
         patch,
         dsize=(patch.shape[1], patch.shape[0]),
-        center=center_local,
+        center=(cx, cy),
         maxRadius=max_radius,
         flags=cv2.WARP_POLAR_LOG
     )
 
-    # 3) Histogramas
     hist = np.zeros((n_radial, n_angular), dtype=np.float32)
 
     step_r = log_polar.shape[0] // n_radial
@@ -40,18 +44,46 @@ def LogPolarDescriptor(img_window, center, n_radial=5, n_angular=12):
     return hist.flatten()
 
 
-def ComputeShapeDescriptors(letter_skeleton, R=12):
-    points = ExtractSkeletonPoints(letter_skeleton)
+# -------------------------------------------------------
+# CALCULA O SHAPE DESCRIPTORS DA IMAGEM
+# -------------------------------------------------------
+def ComputeShapeDescriptors(letter_img, R=12):
+
+    H, W = letter_img.shape
+
+    grid_w = W // 2
+    grid_h = H // 2
+
+    points = []
     descriptors = []
 
-    for p in points:
-        window, center = ExtractWindow(letter_skeleton, p, R)
-        hist = LogPolarDescriptor(window, center)
-        descriptors.append(hist)
+    for gy in range(grid_h):
+        for gx in range(grid_w):
+
+            # ponto central da célula da grade
+            px = int((gx + 0.5) * (W / grid_w))
+            py = int((gy + 0.5) * (H / grid_h))
+
+            px = min(W - 1, px)
+            py = min(H - 1, py)
+
+            # salva posição absoluta
+            points.append((px, py))
+
+            # extrair janela local centrada no ponto
+            window, center_local = ExtractWindow(letter_img, (px, py), R)
+
+            # extrair descritor
+            hist = LogPolarDescriptor(window, center_local)
+
+            descriptors.append(hist)
 
     return points, descriptors
 
 
+# -------------------------------------------------------
+# Extrai a janela local
+# -------------------------------------------------------
 def ExtractWindow(img, p, R):
     x, y = p
     h, w = img.shape
@@ -67,12 +99,3 @@ def ExtractWindow(img, p, R):
     cy = y - y1
 
     return window, (cx, cy)
-
-
-
-
-def ExtractSkeletonPoints(skeleton_img):
-    
-    ys, xs = np.where(skeleton_img > 0) 
-    points = list(zip(xs, ys))
-    return points
