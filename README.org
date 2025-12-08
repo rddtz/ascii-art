@@ -65,3 +65,27 @@ ration is important to correctly get the image vertices.
 * Members
 - Rayan Raddatz de Matos ([[https://github.com/rddtz][@rddtz]])
 - Eduardo Magnus Lazuta ([[https://github.com/MagnusLazuta][@MagnusLazuta]])
+
+#+begin_src shell :results output :exports both
+                              .O.~*cc`......``c~\.     ,\*cc```````o*-\\,.
+                      .#7c`O..                 O~..7`.                ..O``~.
+                    ](.0[                        0[                        .[`~.
+                  .<\  7.                        0                          ).|+
+                 .!O. .(                         0                          .[`.(
+                O7O(  7.                         0                           ].`O\
+               .(/!. .[                          0                           .[  `.
+              0(7].  7.                          0                            ]. .)OI
+             .(]OL  .[                           0                            .\  )!O\
+            .!0L(   T                            0                             ]. .\IO\
+           .!.!7.  .[                            0L                            .+ .\L\0,
+          ./.7].   !                              [                             0L ``OL7\
+         .7.)O(   oL                              [                              I  .)`.)L
+         7.].!.  .!                               [                              0L  .\].).
+        7.O(7.   ].                               [                               +   O\$.).
+       7..!0L   .(                                [                               O.   `oo.o.
+      ]..<.(    ]....,\\~***==ccccc==*~\,.        [       .,<=-/=======**~\\\\\,.. ).   .**.).
+     o..\T/. .,00\-^c```.OO\\=#####\\\,..($*\     [   O\c`,\>**^ccccc^^=.. .O``c^**\\.   .$+ ^.
+    .L 0(]..O,.\\~--*co\$\\>===*****==#\,`$*#,    [  >.~$^$o#>======\0`00L\ccc^**=~\\\\,..O$..).
+  O/~*:`....    ....,,.\\\\\\****^^^**=#\,OO.0....[.,(``.,\\\----~=###\\\\,,,,....       ...`o~\~.
+\*<ccc```````.......                     .0cc`.......ccc..                   ........OOO````ccccc!<.
+#+end_src
