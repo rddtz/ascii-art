@@ -5,7 +5,7 @@
 #+TITLE: Fundamentals of Image Processing: Structure-based ASCII Art
 #+AUTHOR: Rayan Raddatz de Matos, Eduardo Magnus Lazuta
 
-#+begin_src txt :results output :exports both
+#+begin_src
                                .\.
                              O/` O~.
                            .7L.7`!..~.
@@ -112,7 +112,7 @@ ration is important to correctly get the image vertices.
 - Rayan Raddatz de Matos ([[https://github.com/rddtz][@rddtz]])
 - Eduardo Magnus Lazuta ([[https://github.com/MagnusLazuta][@MagnusLazuta]])
 
-#+begin_src shell :results output :exports both
+#+begin_src
                               .O.~*cc`......``c~\.     ,\*cc```````o*-\\,.
                       .#7c`O..                 O~..7`.                ..O``~.
                     ](.0[                        0[                        .[`~.
