@@ -5,7 +5,7 @@
 #+TITLE: Fundamentals of Image Processing: Structure-based ASCII Art
 #+AUTHOR: Rayan Raddatz de Matos, Eduardo Magnus Lazuta
 
-#+begin_src shell :results output :exports both
+#+begin_src txt :results output :exports both
                                .\.
                              O/` O~.
                            .7L.7`!..~.
