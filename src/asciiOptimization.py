@@ -6,7 +6,6 @@ from tqdm import tqdm
 import asciiVectorize as asciiV
 import asciiAISS as asciiA
 
-
 def ComputeVTheta(vec_old, vec_new):
 
     norm_old = np.linalg.norm(vec_old)
@@ -38,10 +37,8 @@ def ComputeVR(vec_old, vec_new, min_dim):
 
     arg1 = lambda_2 * abs(r_linha - r)
 
-
-    numerator = lambda_3 * max(r, r_linha)
-    denominator = min(r, r_linha) + epsilon
-    arg2 = numerator / denominator
+    ratio = max(r, r_linha) / (min(r, r_linha) + epsilon)
+    arg2 = lambda_3 * (ratio - 1.0)
 
     term1 = safe_exp(arg1)
     term2 = safe_exp(arg2)
@@ -232,6 +229,7 @@ def Optimize(Rh, polylines, polylines_orig, target_W, target_H, letters, args):
             if(args.limit >= 0):
                 progress.update(1)
             continue
+
         point_idx = random.randint(0, len(polylines[line_idx])-1)
 
         old_pos = np.copy(polylines[line_idx][point_idx])
@@ -297,7 +295,7 @@ def Optimize(Rh, polylines, polylines_orig, target_W, target_H, letters, args):
         # Reaplica movimento
         polylines[line_idx][point_idx] = new_pos
 
-        delta = E_new - E_old
+        delta = E_new - E_old # se ficar negativo, BOM
 
         safe_temp = max(temp, 1e-9)
         exponent = -delta / safe_temp

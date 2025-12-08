@@ -4,6 +4,9 @@ import numpy as np
 from skimage import morphology
 from skimage.measure import approximate_polygon
 import matplotlib.pyplot as plt
+import sys
+
+sys.setrecursionlimit(5000)
 
 def SkeletonizeImage(img, args):
 
@@ -18,12 +21,6 @@ def SkeletonizeImage(img, args):
 
     return img_bin_one_pixel
 
-"""
-Tried to use the cv2.findContours() function but it resulted in
-two lines for each edge instead of one because it finds Contours.
-
-Now we are trying to use a method based on dfs to create the vectors.
-"""
 def RecursiveVectorizeDFS(current_pixel, current_line, visited, img_shape):
 
     visited[current_pixel] = 2
@@ -73,6 +70,7 @@ def VectorizeDFS(img_skt, args):
             line = approximate_polygon(np.array(line), tolerance=args.tolerance)
         else:
             line = approximate_polygon(np.array(line), tolerance=0)
+
         lines.append(line)
 
     return lines
@@ -86,7 +84,6 @@ def VectorizeCountours(img_skt, args):
     for cnt in contours:
         # cnt is shape (N, 1, 2) -> we want (N, 2)
         line = cnt.reshape(-1, 2)
-
 
         # findContours treats everything as a closed loop,
         # We take only the first half if start and end are close.

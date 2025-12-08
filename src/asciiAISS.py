@@ -71,7 +71,14 @@ def AISS(img, args):
 
 def PrepareAsciiCharImages(args):
 
-    chars = [chr(i) for i in range(32, 127)] # Caracteres imprimíveis
+    # Caracteres imprimíveis
+    chars = ['!', '.', ',', '/', '\\', '-', '_',
+             ';', ':', '~', '`', 'L', 'I', '|',
+             'T', 'c', '#', '$', '=', '+', '[',
+             ']', '^', '(', ')', '*', '0', 'O',
+             'o', '7', '<', '>']
+
+
     library = {}
 
     for char in chars:
@@ -95,6 +102,16 @@ def PrepareAsciiCharImages(args):
 
     return library
 
+def ComputeAISSDistance(desc1, desc2):
+
+    # M = n + n' -> soma total dos tons cinzas
+    # n1 = np.sum(desc1)
+    # n2 = np.sum(desc2)
+    # M = n1 + n2 + 1e-5 # Epsilon para evitar divisão por zero
+
+    diff = np.linalg.norm(desc1 - desc2)
+
+    return diff # / M
 
 def CalculateTa(Rh, raster, letters, args):
 
@@ -116,7 +133,7 @@ def CalculateTa(Rh, raster, letters, args):
             min_dist = float('inf')
             for _, char_desc in letters.items():
                 # Distancia simplificada (não utilizamos o fato M e nem multiplicamos ponto a ponto)
-                d = np.linalg.norm(desc - char_desc)
+                d = ComputeAISSDistance(desc, char_desc)
                 if d < min_dist:
                     min_dist = d
 
