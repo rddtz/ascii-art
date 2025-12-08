@@ -10,50 +10,6 @@ This repository contain the codes, reports and results of our final
 work for the Fundamentals of Image Processing (INF01046). The aim of
 this repository is to reproduce the results from [[https://ttwong12.github.io/papers/asciiart/asciiart.html][this paper]].
 
-                            .\.
-                             O/` O~.
-                           .7L.7`!..~.
-                          .(.\[.. ]\.`\
-                         .( 7.  OL .~ .*.\`^\.,<. ..                 .
-                         |.>....\T~ .~..)~\. `$.O*`[        .,\-^c``.)
-                        .[ [ ).`\.c`...    .  .. ...*,0>^c``..,>*c``L..
-                        0L0. .7`.                    .   .\-<..     ( [
-                        ] )\<.                        .\/..        oL.[
-                        ]>`.                           `\.\-*c.    T ].
-                       .[                               .`$O0cc`  7..[
-                      7`   .*cco.                         .**cc..>. 7.
-                    0!.   /. 7...o.                        ). .>`. ].
-               ..\>c.   .![ .[   .\                         0<..  O(
-                .c=#\\,,0.L .o-=*`.  .         .``c^\.           .!                ....
-            .O<**\\..  .\$)\.   0L .`.   \  .<#,)<cc~`[          ].             ,/`./`c*\,
-          .$^^.    ..`^\,..c--~/`        ` 0+...[   .[0.         |         .>*:`.        .`\
-           .,-!`OOOO```:^\        o~<,..   ((   ^\*c`.].         |         0:              .).
-            0L)0*-c```cccccc^^*.   )##<.   !\\.    .>*.          |       >$...              .(
-            O...>.           O*,..0#.       .`*<<``~!.           ]     .!..`..`=.           .]
-               <=.OL            ..o*c<..`^,.-\======<<\O..     ]~]` ..Oc.O:                 0.
-               `.o#O=<.               ......`~O>~..     ..O``o~==LO!.0. .>^.              .\!.
-                  ...0/!\O,.                  .`=..`c~\.      .`<.+     ].      /   ccccc`..
-                  .*`.  ....`^=\\..              .o\.  .Oc*\. *c~.(].          >*[0~
-                 o`0`../.        ..``   .*-=\.     .]\O.  O/$~,| .~!           `>..
-                 \`.  .L ..                  .O^\ .!cc*^c`. o...   O~.         0L
-                7.    0\7.                             O.   0.      .)L        ]L
-               .c`!     I                                o^\/       . `.       .(
-               O ].                                      0.         ).OO~.      .\
-                 ]                                     .^7.          O\L.!       .().
-                 .[ 0.                                0(              .. .I       ] ).\
-                  O*\o.                               .       c\.         O[      . ]*O[
-                    .(`\.I          L         .  .+             ``\     *. |        .  T
-                     ]..!.[        .[.        .[ oL    .[         ]      O\)           T
-                     .\  .`.       O/.         O~].    7.         ]       .!          0[0[
-                      )    `.7\   \ !            0.    [          )c[     .`         0>*(.
-                      O[    .o.`=,O].           .\|   O.            |     7.       .(..!.
-                 0^``..[         7`(             .L   \.            `    7.           ./.
-                OL 7`.cccc.      [].             ).O*c`..O`             /.         ../.
-                ]. [. 7...      0L<.          0.7./..                ..          0^`.
-                .`~<<<(   /.    o.7. ,.      ./$L! .L  7`>.         .`.         .`)+
-                      O^~\o,,0>-$/. 7.      O/`O`L ].  ! `. ..,\~^c`.`~\..`\O``...
-                            .   .`*\\[,,\\*`.    O>*\,0\~^``...        ..O```.                                  .
-
 * Creating ASCII Art
 ** Requirements
 This code as created using =python 3.11.2=. We use different libraries
@@ -90,6 +46,7 @@ This makes a ASCII Art made of *40 columns* (text width) from the
 =image2.jpg= taking in count only 0.2% of the colors. A good chose of
 ration is important to correctly get the image vertices.
 
+#+begin_src
                   7)_
                  ]. I
                 _[  .\
@@ -103,29 +60,8 @@ ration is important to correctly get the image vertices.
            7. \_-`..`^\.  ]_
           o._-`.      .O^\.I
           +`.             O>L
+#+end_src
 
 * Members
 - Rayan Raddatz de Matos ([[https://github.com/rddtz][@rddtz]])
 - Eduardo Magnus Lazuta ([[https://github.com/MagnusLazuta][@MagnusLazuta]])
-
-                              .O.~*cc`......``c~\.     ,\*cc```````o*-\\,.
-                      .#7c`O..                 O~..7`.                ..O``~.
-                    ](.0[                        0[                        .[`~.
-                  .<\  7.                        0                          ).|+
-                 .!O. .(                         0                          .[`.(
-                O7O(  7.                         0                           ].`O\
-               .(/!. .[                          0                           .[  `.
-              0(7].  7.                          0                            ]. .)OI
-             .(]OL  .[                           0                            .\  )!O\
-            .!0L(   T                            0                             ]. .\IO\
-           .!.!7.  .[                            0L                            .+ .\L\0,
-          ./.7].   !                              [                             0L ``OL7\
-         .7.)O(   oL                              [                              I  .)`.)L
-         7.].!.  .!                               [                              0L  .\].).
-        7.O(7.   ].                               [                               +   O\$.).
-       7..!0L   .(                                [                               O.   `oo.o.
-      ]..<.(    ]....,\\~***==ccccc==*~\,.        [       .,<=-/=======**~\\\\\,.. ).   .**.).
-     o..\T/. .,00\-^c```.OO\\=#####\\\,..($*\     [   O\c`,\>**^ccccc^^=.. .O``c^**\\.   .$+ ^.
-    .L 0(]..O,.\\~--*co\$\\>===*****==#\,`$*#,    [  >.~$^$o#>======\0`00L\ccc^**=~\\\\,..O$..).
-  O/~*:`....    ....,,.\\\\\\****^^^**=#\,OO.0....[.,(``.,\\\----~=###\\\\,,,,....       ...`o~\~.
-\*<ccc```````.......                     .0cc`.......ccc..                   ........OOO````ccccc!<.
