@@ -2,323 +2,570 @@ import cv2
 import numpy as np
 import math
 import random
+import copy
 from tqdm import tqdm
 import asciiVectorize as asciiV
 import asciiAISS as asciiA
+from skimage.draw import line
 
-def ComputeVTheta(vec_old, vec_new):
+def VectorsAngle(v1, v2):
 
-    norm_old = np.linalg.norm(vec_old)
-    norm_new = np.linalg.norm(vec_new)
+    cosang = np.dot(v1, v2)
+    sinang = np.linalg.norm(np.cross(v1, v2))
+    return np.arctan2(sinang, cosang)
+    # angulo entre dois vetores
 
-    if norm_old == 0 or norm_new == 0:
-        return 1.0
+def IntersecLinha(p0x, p0y, p1x, p1y, p2x, p2y, p3x, p3y):
 
-    cos_theta = np.dot(vec_old, vec_new) / (norm_old * norm_new)
-    cos_theta = np.clip(cos_theta, -1.0, 1.0)
-    theta = math.acos(cos_theta)
+    # Calculates the intersection point of two polylines (p0-p1) and (p2-p3).
 
-    return math.exp((8.0 / math.pi) * theta)
+    s1x = p0x - p1x
+    s1y = p0y - p1y
+    s2x = p2x - p3x
+    s2y = p2y - p3y
 
-def safe_exp(x):
-    if x > 700:
-        return float('inf')
-    return math.exp(x)
+    dx = p0x * p1y - p1x * p0y
+    dy = p2x * p3y - p2y * p3x
 
-def ComputeVR(vec_old, vec_new, min_dim):
+    # Check for parallel lines to avoid div by zero
+    div = s1x * s2y - s1y * s2x
+    if div == 0: # denominador e zero
+        return -1, -1
 
-    r = np.linalg.norm(vec_old)
-    r_linha = np.linalg.norm(vec_new)
+    x = (dx * s2x - dy * s1x) / div
+    y = (dx * s2y - dy * s1y) / div
 
-    epsilon = 1e-9
+    tx1 = min(p0x, p1x); tx2 = max(p0x, p1x)
+    ty1 = min(p0y, p1y); ty2 = max(p0y, p1y)
+    tx3 = min(p2x, p3x); tx4 = max(p2x, p3x)
+    ty3 = min(p2y, p3y); ty4 = max(p2y, p3y)
 
-    lambda_2 = 2.0 / (min_dim + epsilon)
-    lambda_3 = 0.5
+    if tx1 <= x <= tx2 and ty1 <= y <= ty2 and tx3 <= x <= tx4 and ty3 <= y <= ty4:
+        return x, y
+    else:
+        return -1, -1 # não houve intersecção
 
-    arg1 = lambda_2 * abs(r_linha - r)
 
-    ratio = max(r, r_linha) / (min(r, r_linha) + epsilon)
-    arg2 = lambda_3 * (ratio - 1.0)
+def PontoMaisProximo(line, x_out, y_out):
+    # Finds the closest point on a line to the point
 
-    term1 = safe_exp(arg1)
-    term2 = safe_exp(arg2)
+    if not len(line):
+        return 0, 0
 
-    return max(term1, term2)
+    best_x, best_y = line[0]
+    min_dist_sq = float('inf')
 
-def GetIntersectionRay(ray_origin, ray_dir, seg_p1, seg_p2):
+    # itera sobre toda a linha
+    for i in range(len(line) - 1):
 
-    rx, ry = ray_origin
-    rdx, rdy = ray_dir
-    x1, y1 = seg_p1
-    x2, y2 = seg_p2
+        x1, y1 = line[i]
+        x2, y2 = line[i+1]
 
-    sx, sy = x2 - x1, y2 - y1
+        px = x2 - x1
+        py = y2 - y1
+        norm_sq = px * px + py * py
 
-    denom = rdx * sy - rdy * sx
-    if denom == 0: # se são paralelos
-        return None, None
+        if norm_sq == 0:
+            u = 0
+        else:
+            u = ((x_out - x1) * px + (y_out - y1) * py) / float(norm_sq) # projecao
 
-    t_ray = ((x1 - rx) * sy - (y1 - ry) * sx) / denom
-    u_seg = ((x1 - rx) * rdy - (y1 - ry) * rdx) / denom
+        if u > 1: u = 1
+        elif u < 0: u = 0
 
-    if t_ray > 0 and 0 <= u_seg <= 1:
-        ix = rx + t_ray * rdx
-        iy = ry + t_ray * rdy
-        return (ix, iy), u_seg # Retorna ponto e posição relativa no segmento
+        x = x1 + u * px
+        y = y1 + u * py
 
-    return None, None
+        # best result found so far
+        dist_sq = (x - x_out)**2 + (y - y_out)**2
+        if dist_sq < min_dist_sq:
+            min_dist_sq = dist_sq
+            best_x, best_y = x, y
 
-def ComputeAccess(current_idx, point_idx, polylines_current, polylines_orig, min_dim):
+    return math.floor(best_x), int(best_y)
 
-    # segmento atual
-    line = polylines_current[current_idx]
-    p1 = line[point_idx]
-    if point_idx + 1 >= len(line): # ultimo ponto
-        return 1.0
-    p2 = line[point_idx + 1]
 
-    midpoint_curr =  ((p1[0]+p2[0])/2, (p1[1]+p2[1])/2)
+def PontosMaisProximos(polylines, point, degree):
 
-    # segmento original correspondente
-    orig_line = polylines_orig[current_idx]
-    op1 = orig_line[point_idx]
-    op2 = orig_line[point_idx+1]
-    midpoint_orig = ((op1[0]+op2[0])/2, (op1[1]+op2[1])/2)
+    # Ray casting
+    # Iterates through all polylines and all points (line segments) in those polylines.
 
+    points = []
+    res = set()
 
-    total_weighted_local = 0.0
-    total_weight = 0.0
+    # Cast rays in circle
+    for i in range(0, 360, degree):
 
-    # Simular "multiple rays" para 8 direções.
-    angles = np.linspace(0, 2*math.pi, 8, endpoint=False)
+        # Convert degrees to radians for Python math functions
+        rad = (i / 180.0) * math.pi
+        x = int(math.sin(rad) * 150) + point[0]
+        y = int(math.cos(rad) * 150) + point[1]
 
-    for ang in angles:
-        ray_dir = (math.cos(ang), math.sin(ang))
+        min_x = 9999
+        min_s = None # Will hold the specific link [p1, p2] hit
 
-        closest = None
-        poly_idx = None
-        seg_idx = None
-        t = None
-        min_dist = float('inf')
+        # iterate over all polylines
+        for j in range(len(polylines)):
+            poly = polylines[j]
 
-        # ray casting
-        # quem é e onde esta o melhor vizinho
-        for l_idx, poly in enumerate(polylines_current):
-            if l_idx == current_idx: continue # Ignora auto-intersecção com a própria polilinha
+            # iterate over all edges in the current polyline
+            for k in range(len(poly) - 1):
+                p_start = poly[k]
+                p_end = poly[k+1]
 
-            for k in range(len(poly)-1):
-                inter, t_seg = GetIntersectionRay(midpoint_curr, ray_dir, poly[k], poly[k+1])
+                # check intersection
+                x_int, y_int = IntersecLinha(point[0], point[1], x , y,
+                                                 p_start[0], p_start[1],
+                                                 p_end[0], p_end[1])
 
-                if inter:
-                    dist = math.hypot(inter[0]-midpoint_curr[0], inter[1]-midpoint_curr[1])
-                    if dist < min_dist:
-                        min_dist = dist
+                if x_int < 0 and y_int < 0:
+                    continue
 
-                        closest = inter
-                        poly_idx = l_idx
-                        seg_idx = k
-                        t = t_seg
+                dist = abs(x_int - point[0]) # or hypotenuse distance
+                if dist < min_x:
+                    min_x = dist
+                    # Store just the segment that was hit
+                    min_s = [p_start, p_end]
 
-        if closest:
+        if min_s:
+            flat = np.array(min_s, dtype=str).flatten() # 1D array of strings
+            res.add(','.join(flat))
 
-            # vetor pp_i do meio atual até o ponto de impacto atual
-            vec_curr = np.array(closest) - np.array(midpoint_curr)
+    # Reconstruct the lines (made of two points) found
+    found_links = [np.array(r.split(','), dtype=int).reshape(2, 2) for r in res]
 
-            # recuperar o vetor original
-            # Usamos os índices (poly_idx, seg_idx) e a posição relativa (u) para achar
+    for link in found_links:
+        n_point = PontoMaisProximo(link, point[0], point[1])
+        # Avoid adding the point itself if the ray started exactly on a line
+        if point[0] != n_point[0] or point[1] != n_point[1]:
+            points.append(n_point)
 
-            orig_neighbor_poly = polylines_orig[poly_idx]
-            orig_neighbor_seg_p1 = orig_neighbor_poly[seg_idx]
-            orig_neighbor_seg_p2 = orig_neighbor_poly[seg_idx + 1]
+    return points
 
-            # achar o ponto exato no segmento original
-            orig_hit_point = (1 - t) * orig_neighbor_seg_p1 + t * orig_neighbor_seg_p2
 
-            # vetor original
-            vec_orig = orig_hit_point - midpoint_orig
+def LocalDeform(A, B, C, args):
 
-            # deformação para este raio
-            v_theta = ComputeVTheta(vec_orig, vec_curr)
-            v_r = ComputeVR(vec_orig, vec_curr, min_dim)
+    # Calculates cost of deforming segment AB to AC.
+    # Penalizes changing angle (Theta) and changing length (r).
 
-            d_local = max(v_theta, v_r)
+    # empirically chosen = não mudarei :)
+    l1 = 8.0 / math.pi
+    l2 = 2.0 / min(args.tw, args.th)
+    l3 = 0.5
 
-            weight = 1.0 / (min_dist + 1e-5)
+    # Angular deformation cost
+    V_theta = math.exp(math.fabs(l1 * VectorsAngle((B[0] - A[0], B[1] - A[1]), (C[0] - A[0], C[1] - A[1]))))
 
-            total_weighted_local += weight * d_local
-            total_weight += weight
+    # Length deformation cost
+    r1 = DistEuclidiana(A, B)
+    r2 = DistEuclidiana(A, C)
+    diff = math.exp(l2 * math.fabs(r1 - r2))
 
-    if total_weight == 0:
-        return 1.0
+    if min(r1, r2) == 0: prop = 0
+    else: prop = math.exp(l3 * max(r1, r2) / min(r1, r2))
 
-    return total_weighted_local / total_weight
+    V_r = max(diff, prop)
+    return max(V_theta, V_r)
 
 
-def DeformationCost(polylines_c, polylines_o, line_idx, point_idx, min_dim):
+def Deform(polylines, chosed, old_pos, new_pos, args):
 
-    # custo local (arestas conectadas ao vértice movido)
-    d_local = 1.0
+    if chosed[0] == new_pos[0] and chosed[1] == new_pos[1]:
+        return -1 # Invalid move
 
-    current_pt = polylines_c[line_idx][point_idx]
-    orig_pt = polylines_o[line_idx][point_idx]
+    d_l = LocalDeform(chosed, old_pos, new_pos, args)
 
-    # aresta anterior
-    if point_idx > 0:
-        prev_pt = polylines_c[line_idx][point_idx-1]
-        prev_o = polylines_o[line_idx][point_idx-1]
+    # Midpoints
+    Pa = (int(old_pos[0] + chosed[0]) // 2, int(old_pos[1] + chosed[1]) // 2)
+    Pa_ = (int(new_pos[0] + chosed[0]) // 2, int(new_pos[1] + chosed[1]) // 2)
 
-        vec_cur = current_pt - prev_pt
-        vec_o = orig_pt - prev_o
+    l = []
+    d_a = 0
+    total_length = 0
 
-        v_theta = ComputeVTheta(vec_o, vec_cur)
-        v_r = ComputeVR(vec_o, vec_cur, min_dim)
-        d_local = max(d_local, max(v_theta, v_r))
+    # Check deformation relative to points next to it
+    points = PontosMaisProximos(polylines, Pa, 10)
+    for i, p in enumerate(points):
+        if (Pa[0] == p[0] and Pa[1] == p[1]) or (Pa_[0] == p[0] and Pa_[1] == p[1]):
+            return -1 # Collision detected
+        l.append(DistEuclidiana(Pa, p))
+        total_length += l[-1]
 
-    # aresta seguinte
-    if point_idx < len(polylines_c[line_idx]) - 1:
-        next_pt = polylines_c[line_idx][point_idx+1]
-        next_o = polylines_o[line_idx][point_idx+1]
+    if total_length == 0:
+        return d_l
 
-        vec_cur = next_pt - current_pt
-        vec_o = next_o - orig_pt
+    for i, p in enumerate(points):
+        d_a += LocalDeform(p, Pa, Pa_, args) * l[i] / total_length
 
-        v_theta = ComputeVTheta(vec_o, vec_cur)
-        v_r = ComputeVR(vec_o, vec_cur, min_dim)
-        d_local = max(d_local, max(v_theta, v_r))
+    return max(d_l, d_a) # max between access and local
 
+def DistEuclidiana(p1, p2):
+    return math.sqrt((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2)
 
-    d_access = ComputeAccess(line_idx, point_idx, polylines_c, polylines_o, min_dim)
+# Which sells the line pass through and what is the size of the line that passed?
 
-    # Maior enter os custos de deformação
-    d_deform = max(d_local, d_access)
+def CelulasAfetadas(A, B, args):
 
-    return d_deform
+    # Always consistent (up to down or left to right per example)
+    if B[1] < A[1] or (B[1] == A[1] and B[0] < A[0]):
+        B, A = A, B
 
-def Optimize(Rh, polylines, polylines_orig, target_W, target_H, letters, args):
+    # deltas
+    d0 = B[0] - A[0]
+    d1 = B[1] - A[1]
 
-    ta = asciiA.CalculateTa(Rh, asciiV.RasterizeLines(polylines, (target_W, target_H)), letters, args)
-    temp = 0.2*ta
+    dx = 1 if d0 >= 0 else -1
+    dy = 1 if d1 >= 0 else -1
 
-    not_changed = 0
-    min_dim = min(args.tw, args.th)
-    current_energy = ta # Aproximação inicial
+    # descritores da linha
+    def fy(x):
+        return d1 * 1.0 / d0 * (x - B[0]) + B[1]
 
+    def fx(y):
+        return d0 * 1.0 / d1 * (y - B[1]) + B[0]
 
-    # Distância máxima de deslocamento (longer side of char)
-    d_max = max(args.tw, args.th)
+    # indices do grid
+    start_i = math.floor(A[0] / args.th)
+    end_i = math.floor(B[0] / args.th)
+    start_j = math.floor(A[1] / args.tw)
+    end_j = math.floor(B[1] / args.tw)
 
+    if dy < 0:
+        ly = start_j * args.tw
+    else:
+        ly = start_j * args.tw + args.tw
+    if dx < 0:
+        lx = start_i * args.th
+    else:
+        lx = start_i * args.th + args.th
 
-    if(args.limit >= 0):
+    res = [(start_i, start_j)]
+    cur = A
+    l = []
+
+    while abs(start_i) != abs(end_i) or abs(start_j) != abs(end_j):
+
+        if d0 == 0:
+            t0 = np.inf
+        else:
+            t0 = fy(lx)
+        if d1 == 0:
+            t1 = np.inf
+        else:
+            t1 = fx(ly)
+
+        if t0 - ly >= 0 and dx * (t1 - lx) <= 0:
+            start_j += dy
+            l.append(DistEuclidiana((t1, ly), cur))
+
+            cur = t1, ly
+            ly += args.tw * dy
+            lasty = ly
+
+        elif t0 - ly < 0 and dx * (t1 - lx) > 0:
+            start_i += dx
+            l.append(DistEuclidiana((lx, t0), cur))
+            cur = lx, t0
+            lx += args.th * dx
+
+        else:
+            start_i += dx
+            start_j += dy
+            l.append(DistEuclidiana((lx, ly), cur))
+
+            cur = lx, ly
+            lx += args.th * dx
+            ly += args.tw * dy
+
+        res.append((start_i, start_j))
+
+    l.append(DistEuclidiana(B, cur))
+
+    new_l = []
+    new_res = []
+    for i, val in enumerate(l):
+        if val > 1:
+            new_l.append(val)
+            new_res.append(res[i])
+
+    return new_res, new_l
+
+# utilizar um hash map (dicionario) para criar um grafo guardar as linhas de forma mais pratica
+# ideia não explicita no artigo
+def HashMapLines(polylines):
+
+    connects = {}
+    polylines_hash = {}
+
+    for index, seg in enumerate(polylines):
+        # We iterate through every point in the polyline
+        for i, point_array in enumerate(seg):
+
+            t = tuple(point_array)
+
+            if t not in polylines_hash: # where is the points? set
+                polylines_hash[t] = set()
+            polylines_hash[t].add((index, i))
+
+            # connections set
+            if i > 0:
+                prev = tuple(seg[i-1])
+
+                # Connect Current -> Previous
+                if t not in connects: connects[t] = set()
+                connects[t].add(prev)
+
+                # Connect Previous -> Current
+                if prev not in connects: connects[prev] = set()
+                connects[prev].add(t)
+
+    return connects, polylines_hash
+
+def Optimize(Rh, polylines, polylines_orig_arg, target_W, target_H, letters, args):
+
+    # Local Deformation Constraint
+    # Over a line segment
+
+    Rw = args.cols
+
+    polylines_dict, polylines_hash = HashMapLines(polylines)
+    aiss = np.zeros((Rh, Rw), dtype=float)
+    final = np.zeros((Rh, Rw), dtype=str)
+
+    c=0
+
+    rad = min(args.tw, args.th)
+    raster = asciiV.RasterizeLines(polylines, (target_H, target_W), 1)
+    h, w = raster.shape
+
+    # Perform a initial classification to start
+    for j in range(Rh):
+        sen = ''
+        for i in range(Rw):
+            # get cell to classify
+            img_data = raster[j * args.th : j * args.th + args.th,
+                              i * args.tw:i * args.tw + args.tw]
+            if np.sum(img_data) == 0:
+                continue
+
+            min_cost, let = asciiA.GetAISSChar(img_data, letters, args)
+            aiss[j, i] = min_cost
+            final[j, i] = let
+
+            chara = let if ord(let) > 0 else ' '
+
+    initial_aiss = np.sum(aiss) # why sum?
+    count_nz = np.count_nonzero(aiss) # good --> K
+    if count_nz == 0:
+        E = 0 # If empty image
+    else:
+        E = initial_aiss/count_nz # initial energy without deform
+        # 1/K * SUM(AISS * DEFORM) --> Defrom = 0 para inicial
+
+    if args.limit >= 0:
         progress = tqdm(total=args.limit)
     else:
         progress = tqdm(total=args.reject)
 
-    iteration = 0
     flag = True
+    not_changed = 0
     while flag:
-        iteration += 1
 
         if args.limit < 0 and not_changed > args.reject:
             flag = False
-        if args.limit >= 0 and iteration >= args.limit:
+        if args.limit >= 0 and c >= args.limit:
             flag = False
 
-        # vértice aleatório
-        line_idx = random.randint(0, len(polylines)-1)
-        if len(polylines[line_idx]) == 0: # empty
-            if(args.limit >= 0):
-                progress.update(1)
-            continue
+        D_cell = np.zeros((Rh, Rw), dtype=float) # deformação para celula
 
-        point_idx = random.randint(0, len(polylines[line_idx])-1)
+        # We save everything because if the move is bad, we must revert.
+        back_up_raster = copy.deepcopy(raster)
+        back_up_aiss = copy.deepcopy(aiss)
+        back_up_final = copy.deepcopy(final)
+        back_up_polylines_dict = copy.deepcopy(polylines_dict)
+        back_up_polylines_hash = copy.deepcopy(polylines_hash)
+        back_up_polylines = copy.deepcopy(polylines)
 
-        old_pos = np.copy(polylines[line_idx][point_idx])
+        point = random.choice(list(polylines_dict.keys()))
+        near_points = polylines_dict[point]
 
-        # deslocar aleatoriamente
-        dx = random.uniform(-d_max, d_max)
-        dy = random.uniform(-d_max, d_max)
-        new_pos = old_pos + [dx, dy]
+        dx = np.random.uniform(-max(args.th, args.tw), max(args.th, args.tw) + 1)
+        dy = np.random.uniform(-max(args.th, args.tw), max(args.th, args.tw) + 1)
+        x = int(dx + point[0])
+        y = int(dy + point[1])
+        x = w-1 if x > w-1 else x if x > 0 else 0
+        y = h-1 if y > h-1 else y if y > 0 else 0
 
-        polylines[line_idx][point_idx] = new_pos
+        new_point = (x, y) # mudança diferente, movendo de forma radial
 
-        # energia (local)
-        # identificar célula afetada
-        c = int(new_pos[0] // args.tw)
-        r = int(new_pos[1] // args.th)
-
-        # checa limites após mudança
-        if r < 0 or r >= Rh or c < 0 or c >= args.cols:
-            polylines[line_idx][point_idx] = old_pos # Revert
-            not_changed += 1
-            progress.update(1)
-            continue
-
-        # rasterizar novamente para calcular AISS
-        raster_c = asciiV.RasterizeLines(polylines, (target_H, target_W), 1)
-        cell_img = raster_c[r*args.th : (r+1)*args.th,
-                            c*args.tw : (c+1)*args.tw]
-
-        cell_desc = asciiA.AISS(cell_img, args)
-
-        # encontrar melhor caractere
-        best = float('inf')
-        for _, char_desc in letters.items():
-            d = np.linalg.norm(cell_desc - char_desc)
-            if d < best:
-                best = d
-
-        # Calcular D_deform
-        d_deform = DeformationCost(polylines, polylines_orig, line_idx, point_idx, min_dim)
-
-        # Simplificado utilizando apenas a celula atual
-        E_new = best * d_deform
-
-
-        # Revertemos para calcular E_old exato localmente
-        polylines[line_idx][point_idx] = old_pos
-        raster_old = asciiV.RasterizeLines(polylines, (target_H, target_W), 1)
-        cell_old = raster_old[r*args.th : (r+1)*args.th,
-                              c*args.tw : (c+1)* args.tw]
-
-        desc_old = asciiA.AISS(cell_old, args)
-
-        old = float('inf')
-        for _, cd in letters.items():
-            d = np.linalg.norm(desc_old - cd)
-            if d < old:
-                old = d
-
-        # D_deform old é 1.0 se não havia deformação anterior, mas temos que calcular relativo ao original
-        d_deform_old = DeformationCost(polylines, polylines_orig, line_idx, point_idx, min_dim)
-        E_old = old * d_deform_old
-
-        # Reaplica movimento
-        polylines[line_idx][point_idx] = new_pos
-
-        delta = E_new - E_old # se ficar negativo, BOM
-
-        safe_temp = max(temp, 1e-9)
-        exponent = -delta / safe_temp
-        if exponent > -700 and exponent < 700:
-            prob = math.exp(exponent)
-        elif exponent > 700:
-            prob = float('inf')
+        # Update Graph Topology (Move point in dict)
+        if new_point in polylines_dict:
+            polylines_dict[new_point] = polylines_dict[new_point] | polylines_dict.pop(point)
+            # se se mover pra cima de um ponto eles se juntam (| é união de sets)
         else:
-            prob = 0
+            polylines_dict[new_point] = polylines_dict.pop(point)
+            # se não só pega as conexões do ponto anterior e coloca no novo ponto
 
-        if delta < 0 or random.random() < prob:
-            not_changed = 0 # restart optimization counter
-            if args.limit < 0:
+        raster = raster
+        # atualiza o grid the pixels
+        for p in near_points:
+            polylines_dict[p].remove(point)
+            polylines_dict[p].add(new_point)
+            rr, cc = line(point[0], point[1], p[0], p[1])
+            valid = (rr >= 0) & (rr < h) & (cc >= 0) & (cc < w)
+            raster[rr[valid], cc[valid]] = False
+
+            rr, cc = line(new_point[0], new_point[1], p[0], p[1])
+            valid = (rr >= 0) & (rr < h) & (cc >= 0) & (cc < w)
+            raster[rr[valid], cc[valid]] = True
+
+
+        # calcula posição da celula escolhida no grid
+        cur_chosen_cell = (math.floor(point[0] / args.th), math.floor(point[1] / args.tw))
+        cur_chosen_cell_D = []
+        computed_cells = []
+        wrong_point_chosen = False
+
+        # para cada um dos pontos próximos ao ponto mudado
+        for p in near_points:
+            cur_chosen_cell_l = 0
+            cells, l = CelulasAfetadas(p, point, args)
+            total_l = sum(l)
+
+            new_cells, rubbish = CelulasAfetadas(p, new_point, args)
+
+            D = Deform(polylines, p, point, new_point, args) # deformação
+
+            if D < 0:
+                wrong_point_chosen = True
+                break
+
+            Dtotal = 0
+
+            # recompute new character cells
+            for cell in new_cells:
+                # recompute aiss each cell
+                if cell[0] >= Rh or cell[1] >= Rw:
+                    continue
+
+                img_data = raster[int(cell[0] * args.th):int(cell[0] * args.th + args.th),
+                                 int(cell[1] * args.tw):int(cell[1] * args.tw + args.tw)]
+
+                aiss[cell], final[cell] = asciiA.GetAISSChar(img_data, letters, args)
+
+
+            # compute every cell's deform
+            for index, cell in enumerate(cells):
+
+                if cell[0] >= Rh or cell[1] >= Rw:
+                    continue
+
+                # do not compute the repeated cell again
+                if cell not in computed_cells:
+
+                    if cell != cur_chosen_cell or cur_chosen_cell_l <= 0:
+
+                        for s in polylines:
+
+                            # Iterate through all points (line segments) in the polyline
+                            for k in range(len(s) - 1):
+                                p_start = s[k]
+                                p_end = s[k+1]
+
+                                # Calculate cells and lengths for this specific segment
+                                t_cells, t_l = CelulasAfetadas(p_start, p_end, args)
+
+                                for t_index, t_cell in enumerate(t_cells):
+                                    if cell == t_cell:
+                                        D_cell[cell] += t_l[t_index]
+
+                        # recompute aiss for each affected cell
+                        img_data = raster[int(cell[0] * args.th):int(cell[0] * args.th + args.th),
+                                          int(cell[1] * args.tw):int(cell[1] * args.tw + args.tw)]
+
+                        aiss[cell], final[cell] = asciiA.GetAISSChar(img_data, letters, args)
+
+                    # record the chosen cell total length and partial Deform value
+                    if cell == cur_chosen_cell:
+                        cur_chosen_cell_l = D_cell[cell]
+                        if index < len(l):
+                            cur_chosen_cell_D.append((l[index], D))
+                        continue
+
+                    if index < len(l) and D_cell[cell] != 0:
+                        D_cell[cell] = (D_cell[cell] - l[index] + l[index] * D) / D_cell[cell]
+                        computed_cells.append(cell)
+
+            if wrong_point_chosen:
+                raster = back_up_raster
+                aiss = back_up_aiss
+                final = back_up_final
+                polylines_dict = back_up_polylines_dict
+                progress.update(1)
+                continue
+
+
+        K = np.count_nonzero(aiss)
+        D_cell_new = np.ones((Rh, Rw), dtype=float)
+        not_empty_cells = np.where(D_cell > 0)
+        for i, j in zip(*not_empty_cells):
+            D_cell_new[i, j] = D_cell[i, j]
+
+        if K > 0:
+            cur_E = np.sum(np.multiply(D_cell_new, aiss))/K # <---- K = non-empty cells
+        else:
+            cur_E = E
+
+        diff = abs(cur_E - E)
+        c += 1
+
+        # print(f"Delta {diff} | cur_E {cur_E} | E {E} | Temp {0.2 * initial_aiss * c**0.997}")
+        if cur_E < E:
+            not_changed = 0
+            E = cur_E
+
+            for position in polylines_hash[point]:
+                polylines[position[0]][position[1]] = np.array(new_point)
+            if new_point in polylines_hash:
+                polylines_hash[new_point] = polylines_hash[new_point] | polylines_hash.pop(point)
+            else:
+                polylines_hash[new_point] = polylines_hash.pop(point)
+
+            if(args.limit < 0):
                 progress.reset()
-        else:
-            polylines[line_idx][point_idx] = old_pos # Revert
-            not_changed += 1
-            if args.limit < 0:
+            else:
                 progress.update(1)
+            continue
 
-        # atualizar temperatura
-        temp *= args.decay
-        if args.limit >= 0:
+        # SIMULATED ANNEALING
+        not_changed += 1
+        if c > 0 and initial_aiss > 0:
+            Pr = math.exp(-diff / (0.2 * initial_aiss * c**0.997))
+        else:
+            Pr = 0
+
+        if Pr < np.random.uniform(0.0, 1.0):
+            # Accept Bad Move -> meta heuristic
+            E = cur_E
+            for position in polylines_hash[point]:
+                polylines[position[0]][position[1]] = np.array(new_point)
+
+            if new_point in polylines_hash:
+                polylines_hash[new_point] = polylines_hash[new_point] | polylines_hash.pop(point)
+
+            else:
+                polylines_hash[new_point] = polylines_hash.pop(point)
+
             progress.update(1)
+        else:
+            # Reject
+            raster = back_up_raster
+            aiss = back_up_aiss
+            final = back_up_final
+            polylines_dict = back_up_polylines_dict
+            polylines_hash = back_up_polylines_hash
+            polylines = back_up_polylines
+        progress.update(1)
 
     progress.close()
+    return final

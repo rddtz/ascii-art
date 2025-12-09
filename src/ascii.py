@@ -4,6 +4,7 @@ import numpy as np
 import asciiVectorize as asciiV
 import asciiAISS as asciiA
 from asciiOptimization import Optimize
+import copy
 import time
 from tqdm import tqdm
 import toy_examples as toy
@@ -101,56 +102,60 @@ if __name__ == "__main__":
     print("\n[4/5] Otimizando...")
     t0 = time.time()
 
+    # print(polylines)
+    polylines_orig = [copy.deepcopy(p) for p in polylines]
     if not args.unoptimized:
         if args.limit != 0:
-            polylines_orig = [np.copy(p) for p in polylines]
-            Optimize(Rh, polylines, polylines_orig, target_W, target_H, letters, args)
-
+            final = Optimize(Rh, polylines, polylines_orig, target_W, target_H, letters, args)
     print(f"   OK ({time.time() - t0:.2f}s)")
 
     print("\n[5/5] Generating ASCII Art...")
     t0 = time.time()
 
-    final_raster = asciiV.RasterizeLines(polylines, (target_H, target_W), 1)
-    ascii_grid = []
+    # diffs = 0
+    # for i in range(len(polylines)):
+    #     for j in range(len(polylines[i])):
+    #         if polylines[i][j][0] != polylines_orig[i][j][0] or polylines[i][j][1] != polylines_orig[i][j][1]:
+    #             diffs += 1
 
-    progress = tqdm(total=Rh * args.cols)
+    # print("Mudanças: ", diffs)
 
-    for r in range(Rh):
-        row_str = ""
-        for c in range(args.cols):
-            cell = final_raster[r*args.th : (r+1)*args.th,
-                                c*args.tw : (c+1)*args.tw]
-            if np.sum(cell) == 0:
-                row_str += " "
+    if args.unoptimized or args.limit == 0:
+        final_raster = asciiV.RasterizeLines(polylines, (target_H, target_W), 1)
+        ascii_grid = []
+
+        progress = tqdm(total=Rh * args.cols)
+
+        for r in range(Rh):
+            row_str = ""
+            for c in range(args.cols):
+                cell = final_raster[r*args.th : (r+1)*args.th,
+                                    c*args.tw : (c+1)*args.tw]
+                if np.sum(cell) == 0:
+                    row_str += " "
+                    progress.update(1)
+                    continue
+
+                _, best = asciiA.GetAISSChar(cell, letters, args)
+
+                row_str += best
                 progress.update(1)
-                continue
+            ascii_grid.append(row_str)
 
-            desc = asciiA.AISS(cell, args)
-
-            best_char = " "
-            min_dist = float('inf')
-            for char, char_desc in letters.items():
-                d = asciiA.ComputeAISSDistance(desc, char_desc)
-                if d < min_dist:
-                    min_dist = d
-                    best_char = char
-            row_str += best_char
-            progress.update(1)
-        ascii_grid.append(row_str)
+        for line in ascii_grid:
+            print(line)
+    else:
+        progress = tqdm(total=Rh * args.cols)
+        for j in range(Rh):
+            row = ''
+            for i in range(args.cols):
+                ind = final[j, i]
+                let = ind if len(ind) > 0 else ' '
+                row += let
+                progress.update(1)
+            print(row)
 
     progress.close()
-
-#    with open(OUTPUT_FILE, "w") as f:
-    for line in ascii_grid:
-        print(line)
-            #f.write(line + "\n")
-        # print(f"Resultado salvo em {OUTPUT_FILE}")
-
-    # if args.visible:
-    #     print(polylines)
-    #     asciiV.PlotLines(polylines, skeleton_img)
-
 
     print(f"   OK ({time.time() - t0:.2f}s)")
     print(f"   FINISHED:  {time.time() - start_time:.2f}s")

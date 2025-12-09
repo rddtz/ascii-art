@@ -66,18 +66,39 @@ def AISS(img, args):
             desc =  LogPolarDescriptor(patch, center_local)
             descriptors.append(desc)
 
-    return np.concatenate(descriptors)
+    # log and grayness
+    return [np.concatenate(descriptors), (img > 0).sum()]
 
+def GetAISSChar(img, letters, args):
+
+    min_cost = 9999
+    l = -1
+
+    desc_img = AISS(img, args)
+
+    for k, v in letters.items():
+        # This corresponds to
+        cost = np.linalg.norm(desc_img[0].reshape(-1, 60) - v[0].reshape(-1, 60), axis=1).sum() / (desc_img[1] + v[1])
+
+        # Se este erro for menor que o menor erro visto até agora...
+        if cost < min_cost:
+            min_cost = cost  # Atualiza o menor custo
+            let = k          # Define esta letra 'k' como a melhor candidata
+
+    # Devolve o quão parecida é a imagem (custo) e qual letra ela parece ser.
+    return min_cost, let
 
 def PrepareAsciiCharImages(args):
 
     # Caracteres imprimíveis
-    chars = ['!', '.', ',', '/', '\\', '-', '_',
-             ';', ':', '~', '`', 'L', 'I', '|',
-             'T', 'c', '#', '$', '=', '+', '[',
-             ']', '^', '(', ')', '*', '0', 'O',
-             'o', '7', '<', '>']
+    # chars = ['!', '.', ',', '/', '\\', '-', '_',
+    #          ';', ':', '~', '`', 'L', 'I', '|',
+    #          'T', 'c', '#', '$', '=', '+', '[',
+    #          ']', '^', '(', ')', '*', '0', 'O',
+    #          'o', '7', '<', '>']
 
+    chars = [chr(i) for i in range(32, 127)] # Caracteres imprimíveis
+    print(chars)
 
     library = {}
 
@@ -104,14 +125,25 @@ def PrepareAsciiCharImages(args):
 
 def ComputeAISSDistance(desc1, desc2):
 
-    # M = n + n' -> soma total dos tons cinzas
-    # n1 = np.sum(desc1)
-    # n2 = np.sum(desc2)
-    # M = n1 + n2 + 1e-5 # Epsilon para evitar divisão por zero
 
-    diff = np.linalg.norm(desc1 - desc2)
+    n1 = np.sum(desc1)
+    n2 = np.sum(desc2)
+    M = n1 + n2 + 1e-5 # Avoid division by zero
 
-    return diff # / M
+    # LogPolarDescriptor: 5 * 12 = 60 bins per point
+    bins_per_point = 60
+
+    # -1 allows numpy to infer the number of samples
+    d1_reshaped = desc1.reshape(-1, bins_per_point)
+    d2_reshaped = desc2.reshape(-1, bins_per_point)
+
+    # This corresponds to
+    local_distances = np.linalg.norm(d1_reshaped - d2_reshaped, axis=1)
+
+    # 4. Sum over all points (Sigma)
+    sum_distances = np.sum(local_distances)
+
+    return sum_distances / M
 
 def CalculateTa(Rh, raster, letters, args):
 
@@ -137,7 +169,7 @@ def CalculateTa(Rh, raster, letters, args):
                 if d < min_dist:
                     min_dist = d
 
-                total_error += min_dist
-                count += 1
+            total_error += min_dist
+            count += 1
 
     return total_error/ max(1, count)
